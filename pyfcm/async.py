@@ -7,23 +7,29 @@ from pyfcm.baseapi import BaseAPI
 
 
 class AsyncioAPI(BaseAPI):
+    def __init__(self, *args, **kwargs):
+        self.aiohttp_verify_ssl = kwargs.pop('aiohttp_verify_ssl', True)
+        self.aiohttp_session = kwargs.pop('aiohttp_session', None)
+        if self.aiohttp_session is None:
+            self.aiohttp_session = aiohttp.ClientSession(
+                connector=aiohttp.TCPConnector(verify_ssl=self.aiohttp_verify_ssl))
+        super().__init__(*args, **kwargs)
 
     async def do_request(self, payload):
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(verify_ssl=False)) as session:
-            async with session.post(self.FCM_END_POINT,
-                                    headers=self.request_headers(),
-                                    data=payload) as response:
-                if 'Retry-After' in response.headers and int(
-                        response.headers['Retry-After']) > 0:
-                    sleep_time = int(response.headers['Retry-After'])
-                    asyncio.sleep(sleep_time)
-                    return await self.do_request(payload)
+        async with self.aiohttp_session.post(self.FCM_END_POINT,
+                                     headers=self.request_headers(),
+                                     data=payload) as response:
+            if 'Retry-After' in response.headers and int(
+                    response.headers['Retry-After']) > 0:
+                sleep_time = int(response.headers['Retry-After'])
+                asyncio.sleep(sleep_time)
+                return await self.do_request(payload)
 
-                # dirty implementation of compatibility with `requests` response
-                response.status_code = response.status
-                response_json = await response.json()
-                response.json = lambda: response_json
-                return response
+            # dirty implementation of compatibility with `requests` response
+            response.status_code = response.status
+            response_json = await response.json()
+            response.json = lambda: response_json
+            return response
 
     async def send_request(self, payloads=None):
         self.send_request_responses = []
@@ -301,7 +307,9 @@ if __name__ == '__main__':
     loop = asyncio.get_event_loop()
 
     push_service = FCMNotification(api_key=os.environ['FCM_SERVER_KEY'])
-    apush_service = AsyncFCMNotification(api_key=os.environ['FCM_SERVER_KEY'])
+    apush_service = AsyncFCMNotification(
+        api_key=os.environ['FCM_SERVER_KEY'],
+        aiohttp_verify_ssl=False)
     reg_ids = [
         'fKk2D2q42ug:APA91bFxg0oQr7UzIn-4PC3ZUBOm3RJ66ML8cWiaOrvfAe9P9AFjYcAYatAjtchh84R78i3ghYLJR6j2xp4CkJ_wKtsvMMD2hZt-_ydHlSmtPuPEuB5V5VdmC5PGbWrc7ruzBnJPAdTy'
     ]
